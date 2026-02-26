@@ -674,9 +674,9 @@ def build_folium_zones_map(zones_meta_df, zone_stats_df, selected_time):
 # Create columns in sidebar to center the image
 col1, col2, col3 = st.sidebar.columns([1, 2, 1])
 with col2:
-    #st.image("images/data-analysis.png", width=100)
+    st.image("images/data-analysis.png", width=100)
     #st.sidebar.title("🕋 Hajj Heat Risk Monitor")
-    st.markdown(DASHBOARD_SVG, unsafe_allow_html=True)
+    #st.markdown(DASHBOARD_SVG, unsafe_allow_html=True)
 
 # Data selection
 st.sidebar.header("📅 Data Selection")
