@@ -771,23 +771,25 @@ st.subheader(f"📊 Current Conditions: {selected_time.strftime('%Y-%m-%d %H:%M'
 # Get data for selected site
 site_current = current_data[current_data['site'] == selected_site]
 
-cols = st.columns(5)
+cols = st.columns(3)
 
 if not site_current.empty:
     row = site_current.iloc[0]
-    twb_eff = row.get('twb_eff_mean', row.get('risk_mean', np.nan))
+    twb_eff = row.get('risk_mean', row.get('twb_eff_mean', np.nan))
     twb_base = row.get('TWB_C', np.nan)
     
     # Calculate contributions if available
-    urban = row.get('dust_penalty_c', 0) + row.get('stagnant_penalty_c', 0)
     crowd = row.get('crowd_penalty_c', 0)
+    wind = row.get('dust_penalty_c', 0) + row.get('stagnant_penalty_c', 0)
+
+    urban = twb_eff - twb_base - wind - crowd
     
     alert_color, alert_msg = get_alert_info(twb_eff)
     
     with cols[0]:
         st.markdown(
             f"<div class='metric-card'>"
-            f"<div class='metric-label'>Effective T_wb</div>"
+            f"<div class='metric-label'>Effective Wet-bulb Temp</div>"
             f"<div class='metric-value' style='color:{get_alert_color(twb_eff)};'>{twb_eff:.1f}°C</div>"
             f"<div class='metric-label'>{alert_color} ALERT</div>"
             f"</div>",
@@ -797,34 +799,44 @@ if not site_current.empty:
     with cols[1]:
         st.markdown(
             f"<div class='metric-card'>"
-            f"<div class='metric-label'>Baseline T_wb</div>"
+            f"<div class='metric-label'>Baseline Wet-bulb Temp</div>"
             f"<div class='metric-value'>{twb_base:.1f}°C</div>"
             f"<div class='metric-label'>Meteorological</div>"
             f"</div>",
             unsafe_allow_html=True
         )
     
+    # with cols[2]:
+    #     st.markdown(
+    #         f"<div class='metric-card'>"
+    #         f"<div class='metric-label'>Urban</div>"
+    #         f"<div class='metric-value' style='color:#FF6B6B;'>+{urban:.2f}°C</div>"
+    #         f"<div class='metric-label'>{(urban/(twb_eff-twb_base)*100) if twb_eff>twb_base else 0:.0f}% of amplification</div>"
+    #         f"</div>",
+    #         unsafe_allow_html=True
+    #     )
+    
+    # with cols[3]:
+    #     st.markdown(
+    #         f"<div class='metric-card'>"
+    #         f"<div class='metric-label'>Crowd</div>"
+    #         f"<div class='metric-value' style='color:#4ECDC4;'>+{crowd:.2f}°C</div>"
+    #         f"<div class='metric-label'>{(crowd/(twb_eff-twb_base)*100) if twb_eff>twb_base else 0:.0f}% of amplification</div>"
+    #         f"</div>",
+    #         unsafe_allow_html=True
+    #     )
+
+    # with cols[4]:
+    #     st.markdown(
+    #         f"<div class='metric-card'>"
+    #         f"<div class='metric-label'>Wind</div>"
+    #         f"<div class='metric-value' style='color:#FF6B6B;'>+{wind:.2f}°C</div>"
+    #         f"<div class='metric-label'>{(wind/(twb_eff-twb_base)*100) if twb_eff>twb_base else 0:.0f}% of amplification</div>"
+    #         f"</div>",
+    #         unsafe_allow_html=True
+    #     )
+    
     with cols[2]:
-        st.markdown(
-            f"<div class='metric-card'>"
-            f"<div class='metric-label'>Urban + Wind Effects</div>"
-            f"<div class='metric-value' style='color:#FF6B6B;'>+{urban:.2f}°C</div>"
-            f"<div class='metric-label'>{(urban/(twb_eff-twb_base)*100) if twb_eff>twb_base else 0:.0f}% of amplification</div>"
-            f"</div>",
-            unsafe_allow_html=True
-        )
-    
-    with cols[3]:
-        st.markdown(
-            f"<div class='metric-card'>"
-            f"<div class='metric-label'>Crowd Contribution</div>"
-            f"<div class='metric-value' style='color:#4ECDC4;'>+{crowd:.2f}°C</div>"
-            f"<div class='metric-label'>{(crowd/(twb_eff-twb_base)*100) if twb_eff>twb_base else 0:.0f}% of amplification</div>"
-            f"</div>",
-            unsafe_allow_html=True
-        )
-    
-    with cols[4]:
         hajj_day = row.get('hajj_day', 0)
         day_names = ["-2", "-1", "0 (Arrival)", "1 (Arafat)", "2 (Eid)", "3", "4", "5"]
         day_name = day_names[hajj_day + 2] if -2 <= hajj_day <= 5 else f"Day {hajj_day}"
@@ -904,14 +916,14 @@ with col2:
         current_data_copy = current_data.copy()
         current_data_copy['risk_score'] = current_data_copy.apply(
             lambda row: risk_order.get(get_alert_info(
-                row.get('twb_eff_mean', row.get('risk_mean', 0)))[0], 0), 
+                row.get('risk_mean', row.get('twb_eff_mean', 0)))[0], 0), 
             axis=1
         )
         sorted_sites = current_data_copy.sort_values('risk_score', ascending=False)
 
         for i, (_, row) in enumerate(sorted_sites.iterrows()):
             site = row['site']
-            temp = row.get('twb_eff_mean', row.get('risk_mean', 0))
+            temp = row.get('risk_mean', row.get('twb_eff_mean', 0))
             alert, msg = get_alert_info(temp)
             color = get_alert_color(temp)
             
@@ -928,29 +940,31 @@ with col2:
                 f"</div>",
                 unsafe_allow_html=True
             )
-        
-        # Quick action summary
-        st.markdown("### ⚡ Immediate Actions")
-        
-        black_sites = current_data_copy[current_data_copy.apply(
-            lambda row: get_alert_info(row.get('twb_eff_mean', row.get('risk_mean', 0)))[0] == 'BLACK', axis=1
-        )]
-        
-        red_sites = current_data_copy[current_data_copy.apply(
-            lambda row: get_alert_info(row.get('twb_eff_mean', row.get('risk_mean', 0)))[0] == 'RED', axis=1
-        )]
-        
-        if not black_sites.empty:
-            st.error(f"🚨 **BLACK ALERT**: {', '.join(black_sites['site'].values)} - SUSPEND ALL OUTDOOR ACTIVITIES")
-        
-        if not red_sites.empty:
-            st.warning(f"⚠️ **RED ALERT**: {', '.join(red_sites['site'].values)} - Protect vulnerable pilgrims")
-        
-        if black_sites.empty and red_sites.empty:
-            st.success("✅ No extreme alerts currently")
-    else:
-        st.warning("No data for selected time")
 
+# col3 = st.columns(1)[0]
+# with col3:
+#     if not current_data.empty:
+#         # Quick action summary
+#         st.markdown("### ⚡ Immediate Actions")
+        
+#         black_sites = current_data_copy[current_data_copy.apply(
+#             lambda row: get_alert_info(row.get('risk_mean', row.get('twb_eff_mean', 0)))[0] == 'BLACK', axis=1
+#         )]
+        
+#         red_sites = current_data_copy[current_data_copy.apply(
+#             lambda row: get_alert_info(row.get('risk_mean', row.get('twb_eff_mean', 0)))[0] == 'RED', axis=1
+#         )]
+        
+#         if not black_sites.empty:
+#             st.error(f"🚨 **BLACK ALERT**: {', '.join(black_sites['site'].values)} - SUSPEND ALL OUTDOOR ACTIVITIES")
+        
+#         if not red_sites.empty:
+#             st.warning(f"⚠️ **RED ALERT**: {', '.join(red_sites['site'].values)} - Protect vulnerable pilgrims")
+        
+#         if black_sites.empty and red_sites.empty:
+#             st.success("✅ No extreme alerts currently")
+#     else:
+#         st.warning("No data for selected time")
 
 # =============================================================================
 # TIME SERIES PLOTS
@@ -976,7 +990,7 @@ if not site_df.empty:
     fig.add_trace(
         go.Scatter(
             x=site_df['timestamp'],
-            y=site_df['twb_eff_mean'] if 'twb_eff_mean' in site_df.columns else site_df['risk_mean'],
+            y=site_df['risk_mean'] if 'risk_mean' in site_df.columns else site_df['twb_eff_mean'],
             mode='lines',
             name='T_wb^eff',
             line=dict(color='red', width=2)
@@ -998,7 +1012,7 @@ if not site_df.empty:
         )
     
     # Add alert threshold lines
-    y_max = site_df['twb_eff_mean' if 'twb_eff_mean' in site_df.columns else 'risk_mean'].max()
+    y_max = site_df['risk_mean' if 'risk_mean' in site_df.columns else 'twb_eff_mean'].max()
     for low, high, color, msg, hex_color in ALERT_THRESHOLDS:
         if high < 100 and low < y_max:
             fig.add_hline(
@@ -1019,7 +1033,7 @@ if not site_df.empty:
         fig.add_trace(
             go.Scatter(
                 x=day_df['hour'],
-                y=day_df['twb_eff_mean'] if 'twb_eff_mean' in day_df.columns else day_df['risk_mean'],
+                y=day_df['risk_mean'] if 'risk_mean' in day_df.columns else day_df['twb_eff_mean'],
                 mode='lines+markers',
                 name=f'{selected_date.strftime("%Y-%m-%d")}',
                 line=dict(color='darkred', width=3),
@@ -1078,7 +1092,7 @@ with col1:
     # Current conditions across sites
     current_summary = current_data.copy()
     if not current_summary.empty:
-        temp_col = 'twb_eff_mean' if 'twb_eff_mean' in current_summary.columns else 'risk_mean'
+        temp_col = 'risk_mean' if 'risk_mean' in current_summary.columns else 'twb_eff_mean'
         current_summary['alert'] = current_summary[temp_col].apply(get_alert_level)
         
         # Prepare data for bar chart
@@ -1105,7 +1119,7 @@ with col2:
     # Alert distribution for selected site
     if not site_df.empty:
         site_df_copy = site_df.copy()
-        site_df_copy['alert'] = site_df_copy['twb_eff_mean' if 'twb_eff_mean' in site_df_copy.columns else 'risk_mean'].apply(get_alert_level)
+        site_df_copy['alert'] = site_df_copy['risk_mean' if 'risk_mean' in site_df_copy.columns else 'twb_eff_mean'].apply(get_alert_level)
         alert_counts = site_df_copy['alert'].value_counts().reset_index()
         alert_counts.columns = ['Alert Level', 'Count']
         

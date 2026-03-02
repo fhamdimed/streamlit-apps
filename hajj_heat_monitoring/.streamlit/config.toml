@@ -1,0 +1,3 @@
+[server]
+# Reduce file watching intensity
+fileWatcherType = "poll"  # Use polling instead of inotify
