@@ -775,7 +775,7 @@ cols = st.columns(3)
 
 if not site_current.empty:
     row = site_current.iloc[0]
-    twb_eff = row.get('risk_mean', row.get('twb_eff_mean', np.nan))
+    twb_eff = row.get('twb_eff_mean', row.get('risk_mean', np.nan))
     twb_base = row.get('TWB_C', np.nan)
     
     # Calculate contributions if available
@@ -916,14 +916,14 @@ with col2:
         current_data_copy = current_data.copy()
         current_data_copy['risk_score'] = current_data_copy.apply(
             lambda row: risk_order.get(get_alert_info(
-                row.get('risk_mean', row.get('twb_eff_mean', 0)))[0], 0), 
+                row.get('twb_eff_mean', row.get('risk_mean', 0)))[0], 0), 
             axis=1
         )
         sorted_sites = current_data_copy.sort_values('risk_score', ascending=False)
 
         for i, (_, row) in enumerate(sorted_sites.iterrows()):
             site = row['site']
-            temp = row.get('risk_mean', row.get('twb_eff_mean', 0))
+            temp = row.get('twb_eff_mean', row.get('risk_mean', 0))
             alert, msg = get_alert_info(temp)
             color = get_alert_color(temp)
             
@@ -948,11 +948,11 @@ with col2:
 #         st.markdown("### ⚡ Immediate Actions")
         
 #         black_sites = current_data_copy[current_data_copy.apply(
-#             lambda row: get_alert_info(row.get('risk_mean', row.get('twb_eff_mean', 0)))[0] == 'BLACK', axis=1
+#             lambda row: get_alert_info(row.get('twb_eff_mean', row.get('risk_mean', 0)))[0] == 'BLACK', axis=1
 #         )]
         
 #         red_sites = current_data_copy[current_data_copy.apply(
-#             lambda row: get_alert_info(row.get('risk_mean', row.get('twb_eff_mean', 0)))[0] == 'RED', axis=1
+#             lambda row: get_alert_info(row.get('twb_eff_mean', row.get('risk_mean', 0)))[0] == 'RED', axis=1
 #         )]
         
 #         if not black_sites.empty:
@@ -990,7 +990,7 @@ if not site_df.empty:
     fig.add_trace(
         go.Scatter(
             x=site_df['timestamp'],
-            y=site_df['risk_mean'] if 'risk_mean' in site_df.columns else site_df['twb_eff_mean'],
+            y=site_df['twb_eff_mean'] if 'twb_eff_mean' in site_df.columns else site_df['risk_mean'],
             mode='lines',
             name='T_wb^eff',
             line=dict(color='red', width=2)
@@ -1012,7 +1012,7 @@ if not site_df.empty:
         )
     
     # Add alert threshold lines
-    y_max = site_df['risk_mean' if 'risk_mean' in site_df.columns else 'twb_eff_mean'].max()
+    y_max = site_df['twb_eff_mean' if 'twb_eff_mean' in site_df.columns else 'risk_mean'].max()
     for low, high, color, msg, hex_color in ALERT_THRESHOLDS:
         if high < 100 and low < y_max:
             fig.add_hline(
@@ -1033,7 +1033,7 @@ if not site_df.empty:
         fig.add_trace(
             go.Scatter(
                 x=day_df['hour'],
-                y=day_df['risk_mean'] if 'risk_mean' in day_df.columns else day_df['twb_eff_mean'],
+                y=day_df['twb_eff_mean'] if 'twb_eff_mean' in day_df.columns else day_df['risk_mean'],
                 mode='lines+markers',
                 name=f'{selected_date.strftime("%Y-%m-%d")}',
                 line=dict(color='darkred', width=3),
@@ -1092,7 +1092,7 @@ with col1:
     # Current conditions across sites
     current_summary = current_data.copy()
     if not current_summary.empty:
-        temp_col = 'risk_mean' if 'risk_mean' in current_summary.columns else 'twb_eff_mean'
+        temp_col = 'twb_eff_mean' if 'twb_eff_mean' in current_summary.columns else 'risk_mean'
         current_summary['alert'] = current_summary[temp_col].apply(get_alert_level)
         
         # Prepare data for bar chart
@@ -1119,7 +1119,7 @@ with col2:
     # Alert distribution for selected site
     if not site_df.empty:
         site_df_copy = site_df.copy()
-        site_df_copy['alert'] = site_df_copy['risk_mean' if 'risk_mean' in site_df_copy.columns else 'twb_eff_mean'].apply(get_alert_level)
+        site_df_copy['alert'] = site_df_copy['twb_eff_mean' if 'twb_eff_mean' in site_df_copy.columns else 'risk_mean'].apply(get_alert_level)
         alert_counts = site_df_copy['alert'].value_counts().reset_index()
         alert_counts.columns = ['Alert Level', 'Count']
         
