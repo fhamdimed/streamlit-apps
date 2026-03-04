@@ -398,7 +398,7 @@ def process_uploaded_file(file, analyzer: CourseAnalyzer):
             
             if data:
                 df = pd.DataFrame(data)
-                print(f"Successfully read with openpyxl direct: {filename}")
+                # print(f"Successfully read with openpyxl direct: {filename}")
             
             wb.close()
         except Exception as e:
@@ -410,7 +410,7 @@ def process_uploaded_file(file, analyzer: CourseAnalyzer):
                 file_bytes = io.BytesIO(file_content)
                 file_bytes.seek(0)
                 df = pd.read_excel(file_bytes, header=None, engine='openpyxl')
-                print(f"Successfully read with pandas+openpyxl: {filename}")
+                # print(f"Successfully read with pandas+openpyxl: {filename}")
             except Exception as e:
                 errors.append(f"pandas+openpyxl failed: {str(e)}")
         
@@ -420,7 +420,7 @@ def process_uploaded_file(file, analyzer: CourseAnalyzer):
                 file_bytes = io.BytesIO(file_content)
                 file_bytes.seek(0)
                 df = pd.read_excel(file_bytes, header=None, engine='xlrd')
-                print(f"Successfully read with pandas+xlrd: {filename}")
+                # print(f"Successfully read with pandas+xlrd: {filename}")
             except Exception as e:
                 errors.append(f"pandas+xlrd failed: {str(e)}")
         
@@ -430,7 +430,7 @@ def process_uploaded_file(file, analyzer: CourseAnalyzer):
                 file_bytes = io.BytesIO(file_content)
                 file_bytes.seek(0)
                 df = pd.read_excel(file_bytes, header=None)
-                print(f"Successfully read with pandas auto: {filename}")
+                # print(f"Successfully read with pandas auto: {filename}")
             except Exception as e:
                 errors.append(f"pandas auto failed: {str(e)}")
         
@@ -896,9 +896,10 @@ def main():
                 }
             
             # Create tabs for different analyses
-            tab1, tab2 = st.tabs([
+            tab1, tab2, tab3 = st.tabs([
                 f"🔴 High Failure Rate Courses (> {failure_threshold}% ≤ {failure_score})",
-                f"🟢 High Success Rate Courses (> {success_threshold}% ≥ {success_score})"
+                f"🟢 High Success Rate Courses (> {success_threshold}% ≥ {success_score})",
+                "📊 Course Details"
             ])
             
             with tab1:
@@ -928,13 +929,13 @@ def main():
                                   'Failure Percentage']
                     st.dataframe(
                         failure_df_with_index[display_cols],
-                        use_container_width=True
+                        width='stretch'
                     )                    
                     
                     # Create visualization
                     fig = create_failure_chart(failure_df, failure_score)
                     if fig:
-                        st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, width='stretch')
                     
                     # Download option
                     csv = failure_df.to_csv(index=False)
@@ -978,13 +979,13 @@ def main():
 
                     st.dataframe(
                         success_df_with_index[display_cols],
-                        use_container_width=True
+                        width='stretch'
                     )
 
                     # Create visualization
                     fig = create_success_chart(success_df, success_score)
                     if fig:
-                        st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, width='stretch')
                     
                     # Download option
                     csv = success_df.to_csv(index=False)
@@ -999,7 +1000,119 @@ def main():
                         st.info(f"No high success rate courses found in the **{selected_dept}** department")
                     else:
                         st.info("No courses found with high success rates meeting the criteria")
-            
+
+            with tab3:
+                st.subheader("Course Details & Statistics")
+                
+                # Create a list of available courses for dropdown
+                course_options = []
+                course_mapping = {}
+                
+                for (title, code), data in aggregated.items():
+                    display_name = f"{code} - {title} (Section: {', '.join(data['sections']) if data['sections'] else 'N/A'})"
+                    course_options.append(display_name)
+                    course_mapping[display_name] = {
+                        'title': title,
+                        'code': code,
+                        'data': data
+                    }
+                
+                if course_options:
+                    selected_course = st.selectbox(
+                        "🔍 Select a course to view details:",
+                        course_options,
+                        help="Choose a course to see detailed statistics and marks distribution"
+                    )
+                    
+                    if selected_course:
+                        course_info = course_mapping[selected_course]
+                        course_data = course_info['data']
+                        
+                        # 1. Course Information - Displayed as text
+                        st.markdown("### 📋 Course Information")
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.markdown(f"**Course Code:** {course_info['code']}")
+                            st.markdown(f"**Course Title:** {course_info['title']}")
+                        with col2:
+                            st.markdown(f"**Department:** {course_data['department']}")
+                            st.markdown(f"**Sections:** {', '.join(course_data['sections']) if course_data['sections'] else 'N/A'}")
+                        
+                        st.markdown("---")
+                        
+                        # 2. Statistics
+                        st.markdown("### 📊 Statistics")
+                        
+                        # Calculate statistics
+                        all_scores = course_data['all_scores']
+                        total_students = course_data['total_students']
+                        absent_count = course_data['absent_count']
+                        present_students = total_students - absent_count
+                        
+                        if all_scores:
+                            avg_score = sum(all_scores) / len(all_scores)
+                            max_score = max(all_scores)
+                            min_score = min(all_scores)
+                            median_score = sorted(all_scores)[len(all_scores)//2]
+                            
+                            # Display statistics in a clean layout
+                            col1, col2, col3, col4 = st.columns(4)
+                            with col1:
+                                st.metric("Total Students", total_students)
+                            with col2:
+                                st.metric("Present", present_students)
+                            with col3:
+                                st.metric("Absent", absent_count)
+                            with col4:
+                                st.metric("Valid Scores", len(all_scores))
+                            
+                            col1, col2, col3, col4 = st.columns(4)
+                            with col1:
+                                st.metric("Average Score", f"{avg_score:.2f}")
+                            with col2:
+                                st.metric("Highest Score", f"{max_score:.2f}")
+                            with col3:
+                                st.metric("Lowest Score", f"{min_score:.2f}")
+                            with col4:
+                                st.metric("Median Score", f"{median_score:.2f}")
+                            
+                            # 4. Marks Distribution
+                            st.markdown("### 📊 Marks Distribution")
+                            
+                            # Create histogram
+                            fig_hist = go.Figure()
+                            fig_hist.add_trace(go.Histogram(
+                                x=all_scores,
+                                nbinsx=20,
+                                marker_color='royalblue',
+                                opacity=0.7,
+                                name='Marks'
+                            ))
+                            
+                            # Add vertical lines for thresholds
+                            fig_hist.add_vline(x=failure_score, line_dash="dash", line_color="red",
+                                              annotation_text=f"Failure ≤{failure_score}", 
+                                              annotation_position="top right")
+                            fig_hist.add_vline(x=success_score, line_dash="dash", line_color="green",
+                                              annotation_text=f"Success ≥{success_score}", 
+                                              annotation_position="top left")
+                            
+                            fig_hist.update_layout(
+                                title=f"Marks Distribution - {course_info['code']}",
+                                xaxis_title="Marks",
+                                yaxis_title="Number of Students",
+                                height=400,
+                                showlegend=False
+                            )
+                            st.plotly_chart(fig_hist, width='stretch')
+                            
+                        else:
+                            st.warning("No valid score data available for this course")
+                else:
+                    st.info("No courses available for analysis")          
+
+
             # Overall summary
             st.header("📈 Summary Statistics")
             
