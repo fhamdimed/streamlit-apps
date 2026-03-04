@@ -748,10 +748,11 @@ def main():
                         
                         # Get just the filename without path
                         base_name = os.path.basename(decoded_name)
-                        
+
                         # Only process valid Excel files
                         if (base_name.lower().endswith(('.xlsx', '.xls')) and 
-                            not base_name.startswith(('~$', '._')) and
+                            '~$' not in base_name and  # Skip any file with ~$ in the name
+                            not base_name.startswith(('._')) and
                             not base_name.startswith('.') and
                             not base_name == 'Thumbs.db' and
                             not base_name == '.DS_Store'):
