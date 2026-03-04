@@ -9,6 +9,7 @@ import io
 import os
 from typing import Dict, List, Tuple, Optional
 import re
+import hmac
 
 # Set page configuration - removed page_layout parameter
 st.set_page_config(
@@ -636,7 +637,34 @@ def create_success_chart(df: pd.DataFrame, success_score: float, title: str = "H
     
     return fig
 
+def check_auth() -> None:
+    """Shared username/password auth using Streamlit secrets."""
+    if st.session_state.get("auth_ok", False):
+        return
+
+    st.title("🔐 Login")
+
+    with st.form("login_form"):
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        submitted = st.form_submit_button("Log in")
+
+    if submitted:
+        user_ok = hmac.compare_digest(username, str(st.secrets.get("APP_USERNAME", "")))
+        pass_ok = hmac.compare_digest(password, str(st.secrets.get("APP_PASSWORD", "")))
+
+        if user_ok and pass_ok:
+            st.session_state["auth_ok"] = True
+            st.rerun()
+        else:
+            st.error("Invalid username or password.")
+            st.stop()
+
+    # Block the rest of the app until authenticated
+    st.stop()
+
 def main():
+    check_auth()
     # Set page title and configure for RTL if needed
     st.set_page_config(
         page_title="Course Performance Analyzer",
