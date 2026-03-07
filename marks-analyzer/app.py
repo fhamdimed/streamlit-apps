@@ -1543,7 +1543,7 @@ def main():
                                 height=400,
                                 showlegend=False
                             )
-                            st.plotly_chart(fig_hist, width=True)
+                            st.plotly_chart(fig_hist, width='stretch')
                             
                         else:
                             st.warning("No valid score data available for this course")
