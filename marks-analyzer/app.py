@@ -10,6 +10,23 @@ import os
 from typing import Dict, List, Tuple, Optional
 import re
 import hmac
+import statistics
+import matplotlib
+matplotlib.use("Agg")  # important for headless servers
+import matplotlib.pyplot as plt
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Paragraph,
+    Spacer,
+    Table,
+    TableStyle,
+    Image,
+)
 
 # Set page configuration - removed page_layout parameter
 st.set_page_config(
@@ -637,6 +654,396 @@ def create_success_chart(df: pd.DataFrame, success_score: float, title: str = "H
     
     return fig
 
+def generate_department_pdf_report(
+    analyzer,
+    aggregated_courses,
+    department,
+    failure_score,
+    success_score,
+    failure_threshold,
+    success_threshold,
+):
+    """Generate a PDF report for all courses in a department (server-ready, matplotlib-based)."""
+
+    def fig_to_image(fig, width, height, dpi=120):
+        """Convert a matplotlib figure to a ReportLab Image."""
+        img_buffer = io.BytesIO()
+        fig.savefig(img_buffer, format="png", dpi=dpi, bbox_inches="tight")
+        img_buffer.seek(0)
+        plt.close(fig)
+        return Image(img_buffer, width=width, height=height)
+
+    # Filter courses by department
+    dept_courses = {
+        key: data
+        for key, data in aggregated_courses.items()
+        if data["department"] == department
+    }
+
+    if not dept_courses:
+        return None
+
+    # Create a buffer for the PDF
+    buffer = io.BytesIO()
+
+    # Create the PDF document
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=72,
+        leftMargin=72,
+        topMargin=72,
+        bottomMargin=72,
+    )
+
+    elements = []
+
+    # Styles
+    styles = getSampleStyleSheet()
+    title_style = styles["Title"]
+    heading_style = styles["Heading1"]
+    subheading_style = styles["Heading2"]
+    normal_style = styles["Normal"]
+
+    center_style = ParagraphStyle(
+        "Center",
+        parent=styles["Normal"],
+        alignment=TA_CENTER,
+        fontSize=12,
+    )
+
+    # Title
+    elements.append(Paragraph(f"Department Report: {department}", title_style))
+    elements.append(Spacer(1, 0.2 * inch))
+
+    # Report info
+    elements.append(
+        Paragraph(
+            f"Generated on: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}",
+            normal_style,
+        )
+    )
+    elements.append(
+        Paragraph(
+            f"Analysis Thresholds: Failure >{failure_threshold}% (≤{failure_score}) | "
+            f"Success >{success_threshold}% (≥{success_score})",
+            normal_style,
+        )
+    )
+    elements.append(Spacer(1, 0.3 * inch))
+
+    # Summary statistics for the department
+    total_courses = len(dept_courses)
+    total_students = sum(d["total_students"] for d in dept_courses.values())
+    total_absent = sum(d["absent_count"] for d in dept_courses.values())
+    total_present = total_students - total_absent
+    all_scores = [score for data in dept_courses.values() for score in data["all_scores"]]
+
+    elements.append(Paragraph("Department Summary", heading_style))
+    elements.append(Spacer(1, 0.1 * inch))
+
+    summary_data = [
+        ["Total Courses", "Total Students", "Total Present", "Total Absent", "Avg. Class Size"],
+        [
+            str(total_courses),
+            str(total_students),
+            str(total_present),
+            str(total_absent),
+            f"{total_students / total_courses:.1f}" if total_courses > 0 else "0",
+        ],
+    ]
+
+    summary_table = Table(
+        summary_data,
+        colWidths=[1.2 * inch, 1.2 * inch, 1.2 * inch, 1.2 * inch, 1.2 * inch],
+    )
+    summary_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 10),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+        ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
+        ("GRID", (0, 0), (-1, -1), 1, colors.black),
+    ]))
+    elements.append(summary_table)
+    elements.append(Spacer(1, 0.2 * inch))
+
+    # Department Grade Distribution Chart
+    if all_scores:
+        elements.append(Paragraph("Department Grade Distribution", subheading_style))
+
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
+
+        # Histogram
+        ax1.hist(all_scores, bins=20, color="royalblue", alpha=0.7, edgecolor="black")
+        ax1.axvline(
+            x=failure_score,
+            color="red",
+            linestyle="--",
+            linewidth=2,
+            label=f"Failure ≤{failure_score}",
+        )
+        ax1.axvline(
+            x=success_score,
+            color="green",
+            linestyle="--",
+            linewidth=2,
+            label=f"Success ≥{success_score}",
+        )
+        ax1.set_xlabel("Marks")
+        ax1.set_ylabel("Number of Students")
+        ax1.set_title("Marks Distribution")
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+
+        # Grade distribution pie chart
+        a_count = sum(1 for s in all_scores if s >= 17)
+        b_count = sum(1 for s in all_scores if 14 <= s < 17)
+        c_count = sum(1 for s in all_scores if 11 <= s < 14)
+        d_count = sum(1 for s in all_scores if 8 <= s < 11)
+        f_count = sum(1 for s in all_scores if s < 8)
+
+        grades = [a_count, b_count, c_count, d_count, f_count]
+        grade_labels = ["A (17-20)", "B (14-16.99)", "C (11-13.99)", "D (8-10.99)", "F (<8)"]
+        colors_pie = ["green", "lightgreen", "gold", "orange", "red"]
+
+        non_zero_grades = [
+            (label, count, color)
+            for label, count, color in zip(grade_labels, grades, colors_pie)
+            if count > 0
+        ]
+        if non_zero_grades:
+            labels, values, pie_colors = zip(*non_zero_grades)
+            ax2.pie(values, labels=labels, colors=pie_colors, autopct="%1.1f%%", startangle=90)
+            ax2.set_title("Grade Distribution")
+        else:
+            ax2.text(0.5, 0.5, "No data", ha="center", va="center")
+            ax2.set_title("Grade Distribution")
+
+        plt.tight_layout()
+
+        elements.append(Spacer(1, 0.1 * inch))
+        elements.append(fig_to_image(fig, 6.5 * inch, 2.8 * inch))
+        elements.append(Spacer(1, 0.2 * inch))
+
+    # High Failure Rate Courses
+    failure_df = analyzer.analyze_failure_rates(dept_courses, 1, failure_threshold, failure_score)
+    elements.append(Paragraph(f"High Failure Rate Courses (> {failure_threshold}% ≤ {failure_score})", heading_style))
+    elements.append(Spacer(1, 0.1 * inch))
+
+    if not failure_df.empty:
+        fig, ax = plt.subplots(figsize=(8, 4))
+        courses = failure_df["Course Code"].tolist()
+        percentages = failure_df["Failure Percentage"].tolist()
+
+        bars = ax.bar(courses, percentages, color="crimson", alpha=0.7)
+        ax.set_xlabel("Course Code")
+        ax.set_ylabel("Failure Rate (%)")
+        ax.set_title("High Failure Rate Courses")
+        ax.set_ylim(0, 100)
+        ax.grid(True, axis="y", alpha=0.3)
+
+        for bar, val in zip(bars, percentages):
+            height = bar.get_height()
+            ax.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                height + 1,
+                f"{val:.1f}%",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+            )
+
+        plt.tight_layout()
+
+        elements.append(fig_to_image(fig, 6 * inch, 3 * inch))
+        elements.append(Spacer(1, 0.1 * inch))
+
+        failure_display = failure_df[
+            [
+                "Course Code",
+                "Course Title",
+                "Total Students",
+                f"Students with Scores ≤ {failure_score}",
+                "Failure Percentage",
+            ]
+        ].copy()
+        failure_display["Failure Percentage"] = failure_display["Failure Percentage"].apply(lambda x: f"{x:.1f}%")
+
+        failure_data = [list(failure_display.columns)] + failure_display.values.tolist()
+        failure_table = Table(failure_data, colWidths=[1 * inch, 2 * inch, 1 * inch, 1.5 * inch, 1.2 * inch])
+        failure_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.crimson),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, 0), 9),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+            ("BACKGROUND", (0, 1), (-1, -1), colors.mistyrose),
+            ("GRID", (0, 0), (-1, -1), 1, colors.black),
+            ("FONTSIZE", (0, 1), (-1, -1), 8),
+        ]))
+        elements.append(failure_table)
+    else:
+        elements.append(Paragraph("No high failure rate courses found in this department.", normal_style))
+
+    elements.append(Spacer(1, 0.2 * inch))
+
+    # High Success Rate Courses
+    success_df = analyzer.analyze_success_rates(dept_courses, 1, success_threshold, success_score)
+    elements.append(Paragraph(f"High Success Rate Courses (> {success_threshold}% ≥ {success_score})", heading_style))
+    elements.append(Spacer(1, 0.1 * inch))
+
+    if not success_df.empty:
+        fig, ax = plt.subplots(figsize=(8, 4))
+        courses = success_df["Course Code"].tolist()
+        percentages = success_df["Success Percentage"].tolist()
+
+        bars = ax.bar(courses, percentages, color="seagreen", alpha=0.7)
+        ax.set_xlabel("Course Code")
+        ax.set_ylabel("Success Rate (%)")
+        ax.set_title("High Success Rate Courses")
+        ax.set_ylim(0, 100)
+        ax.grid(True, axis="y", alpha=0.3)
+
+        for bar, val in zip(bars, percentages):
+            height = bar.get_height()
+            ax.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                height + 1,
+                f"{val:.1f}%",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+            )
+
+        plt.tight_layout()
+
+        elements.append(fig_to_image(fig, 6 * inch, 3 * inch))
+        elements.append(Spacer(1, 0.1 * inch))
+
+        success_display = success_df[
+            [
+                "Course Code",
+                "Course Title",
+                "Total Students",
+                f"Students with Scores ≥ {success_score}",
+                "Success Percentage",
+            ]
+        ].copy()
+        success_display["Success Percentage"] = success_display["Success Percentage"].apply(lambda x: f"{x:.1f}%")
+
+        success_data = [list(success_display.columns)] + success_display.values.tolist()
+        success_table = Table(success_data, colWidths=[1 * inch, 2 * inch, 1 * inch, 1.5 * inch, 1.2 * inch])
+        success_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.seagreen),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, 0), 9),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+            ("BACKGROUND", (0, 1), (-1, -1), colors.lightgreen),
+            ("GRID", (0, 0), (-1, -1), 1, colors.black),
+            ("FONTSIZE", (0, 1), (-1, -1), 8),
+        ]))
+        elements.append(success_table)
+    else:
+        elements.append(Paragraph("No high success rate courses found in this department.", normal_style))
+
+    elements.append(Spacer(1, 0.3 * inch))
+
+    # Detailed Course Information with individual course charts
+    elements.append(Paragraph("Detailed Course Information", heading_style))
+    elements.append(Spacer(1, 0.1 * inch))
+
+    for (title, code), data in sorted(dept_courses.items(), key=lambda x: x[0][1]):
+        elements.append(Paragraph(f"{code} - {title}", subheading_style))
+        elements.append(Spacer(1, 0.05 * inch))
+
+        info_data = [
+            ["Sections", "Department", "Total Students", "Absent", "Present"],
+            [
+                ", ".join(data["sections"]) if data["sections"] else "N/A",
+                data["department"],
+                str(data["total_students"]),
+                str(data["absent_count"]),
+                str(data["total_students"] - data["absent_count"]),
+            ],
+        ]
+
+        info_table = Table(info_data, colWidths=[1.2 * inch, 1.5 * inch, 1 * inch, 0.8 * inch, 0.8 * inch])
+        info_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.lightblue),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, 0), 9),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+            ("GRID", (0, 0), (-1, -1), 1, colors.black),
+            ("FONTSIZE", (0, 1), (-1, -1), 8),
+        ]))
+        elements.append(info_table)
+        elements.append(Spacer(1, 0.05 * inch))
+
+        scores = data["all_scores"]
+        if scores:
+            stats_data = [
+                ["Average", "Highest", "Lowest", "Median", "Valid Scores"],
+                [
+                    f"{sum(scores) / len(scores):.2f}",
+                    f"{max(scores):.2f}",
+                    f"{min(scores):.2f}",
+                    f"{statistics.median(scores):.2f}",
+                    str(len(scores)),
+                ],
+            ]
+
+            stats_table = Table(stats_data, colWidths=[1 * inch, 1 * inch, 1 * inch, 1 * inch, 1 * inch])
+            stats_table.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("GRID", (0, 0), (-1, -1), 1, colors.black),
+            ]))
+            elements.append(stats_table)
+            elements.append(Spacer(1, 0.1 * inch))
+
+            fig, ax = plt.subplots(figsize=(6, 3))
+            ax.hist(scores, bins=15, color="steelblue", alpha=0.7, edgecolor="black")
+            ax.axvline(
+                x=failure_score,
+                color="red",
+                linestyle="--",
+                linewidth=2,
+                label=f"Failure ≤{failure_score}",
+            )
+            ax.axvline(
+                x=success_score,
+                color="green",
+                linestyle="--",
+                linewidth=2,
+                label=f"Success ≥{success_score}",
+            )
+            ax.set_xlabel("Marks")
+            ax.set_ylabel("Number of Students")
+            ax.set_title(f"Marks Distribution - {code}")
+            ax.legend(fontsize=8)
+            ax.grid(True, alpha=0.3)
+
+            plt.tight_layout()
+
+            elements.append(fig_to_image(fig, 5 * inch, 2.5 * inch))
+
+        elements.append(Spacer(1, 0.2 * inch))
+        elements.append(Paragraph("<hr/>", center_style))
+        elements.append(Spacer(1, 0.1 * inch))
+
+    # Build the PDF
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
 def check_auth() -> None:
     """Shared username/password auth using Streamlit secrets."""
     if st.session_state.get("auth_ok", False):
@@ -885,7 +1292,29 @@ def main():
                 departments_list,
                 help="Select a department to filter the analysis results"
             )
-            
+
+            if selected_dept != "All":
+                if st.button(f"📥 Download {selected_dept} Report (PDF)"):
+                    with st.spinner(f"Generating PDF report for {selected_dept} department..."):
+                        pdf_buffer = generate_department_pdf_report(
+                            analyzer, aggregated, selected_dept, 
+                            failure_score, success_score, 
+                            failure_threshold, success_threshold
+                        )
+                        
+                        if pdf_buffer:
+                            st.download_button(
+                                label="📎 Click to Download PDF",
+                                data=pdf_buffer,
+                                file_name=f"{selected_dept.replace(' ', '_')}_department_report.pdf",
+                                mime="application/pdf",
+                                key="pdf_download"
+                            )
+                        else:
+                            st.error(f"No courses found in {selected_dept} department")
+            else:
+                st.button("📥 Select a specific department", disabled=True)
+
             # Filter courses based on selected department
             if selected_dept == "All":
                 filtered_aggregated = aggregated
@@ -1004,11 +1433,20 @@ def main():
             with tab3:
                 st.subheader("Course Details & Statistics")
                 
-                # Create a list of available courses for dropdown
+                # Use the existing selected_dept from the main dropdown
+                st.info(f"Currently viewing courses from: **{selected_dept}** department")
+                
+                # Filter courses based on selected department
+                filtered_courses = {}
+                for key, data in aggregated.items():
+                    if selected_dept == "All" or data['department'] == selected_dept:
+                        filtered_courses[key] = data
+                
+                # Create a list of available courses for dropdown from filtered results
                 course_options = []
                 course_mapping = {}
                 
-                for (title, code), data in aggregated.items():
+                for (title, code), data in filtered_courses.items():
                     display_name = f"{code} - {title} (Section: {', '.join(data['sections']) if data['sections'] else 'N/A'})"
                     course_options.append(display_name)
                     course_mapping[display_name] = {
@@ -1105,13 +1543,15 @@ def main():
                                 height=400,
                                 showlegend=False
                             )
-                            st.plotly_chart(fig_hist, width='stretch')
+                            st.plotly_chart(fig_hist, width=True)
                             
                         else:
                             st.warning("No valid score data available for this course")
                 else:
-                    st.info("No courses available for analysis")          
-
+                    if selected_dept != "All":
+                        st.info(f"No courses available in the **{selected_dept}** department")
+                    else:
+                        st.info("No courses available for analysis")        
 
             # Overall summary
             st.header("📈 Summary Statistics")
