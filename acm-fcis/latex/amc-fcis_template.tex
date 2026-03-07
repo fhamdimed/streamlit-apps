@@ -1,0 +1,87 @@
+\documentclass[a4paper]{article}
+
+\usepackage{multicol}
+\usepackage{pgffor} % Required for the \foreach loop
+\usepackage[insidebox, noshuffle, nowatermark, calibration]{automultiplechoice}
+
+\begin{document}
+
+% Redefine how questions appear on the SAME page (no separate answer sheet)
+\def\AMCbeginQuestion#1#2{%
+  \noindent{\sc Q\ifnum#1<10 0\fi#1: }%
+}
+
+\onecopy{2}{%
+  
+  % Header table with student info and code grids
+  \noindent
+  \begin{tabular}{|l|l|}
+    \hline
+    Student ID & Section \\
+    \hline
+    \vspace{-0.25cm} & \\
+    \AMCcode{StudentNum}{10} & \AMCcode{section}{4} \\
+    \hline
+  \end{tabular}
+  %\hfill
+  %\hfill
+    \namefield{%
+    \fbox{%
+    \begin{minipage}{.38\linewidth}
+   
+    \underline{Student Name}:\\[0.2cm]
+    \makebox[\linewidth]{\dotfill}\\[0.2cm]
+    \makebox[\linewidth]{\dotfill}
+    
+    \vspace{0.4cm}
+    \hrule
+    \vspace{0.4cm}
+    
+    \underline{Course}: Artificial Intelligence\\
+    \underline{Code}: AI-301\\
+    \underline{Date}: 15/06/2026
+    
+    \vspace{0.4cm}
+    \hrule
+    \vspace{0.2cm}
+
+    {\footnotesize
+    \textbf{Instructions:}
+    \begin{itemize}
+    \item Fill in the bubbles completely.
+    \item Use pencil only.
+    \end{itemize}
+    }
+    
+    \end{minipage}%
+    }%
+    }
+  %\hfill
+    
+  \vspace{8pt}
+  \noindent\hrulefill
+  
+  % Questions in three columns
+  \begin{multicols}{3}
+    \columnseprule=.4pt
+    
+    % Loop to generate 40 questions with 7 choices each (A through G)
+    \foreach \n in {1,2,...,60}{
+      \begin{question}{q\n}
+        \begin{choicescustom}
+          \wrongchoice[A]{}%
+          \wrongchoice[B]{}%
+          \wrongchoice[C]{}%
+          \wrongchoice[D]{}%
+          \wrongchoice[E]{}%
+          \wrongchoice[F]{}%
+          \wrongchoice[G]{}%
+        \end{choicescustom}
+      \end{question}
+    }
+    
+  \end{multicols}
+  
+} % End of \onecopy
+
+\end{document}
