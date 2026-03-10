@@ -15,7 +15,7 @@ import matplotlib
 matplotlib.use("Agg")  # important for headless servers
 import matplotlib.pyplot as plt
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
@@ -23,6 +23,7 @@ from reportlab.platypus import (
     SimpleDocTemplate,
     Paragraph,
     Spacer,
+    PageBreak,
     Table,
     TableStyle,
     Image,
@@ -665,6 +666,12 @@ def generate_department_pdf_report(
 ):
     """Generate a PDF report for all courses in a department (server-ready, matplotlib-based)."""
 
+    def create_wrapped_cell(text, style, max_width):
+        """Create a wrapped paragraph for table cells"""
+        if not text or text == 'N/A':
+            text = 'N/A'
+        return Paragraph(str(text), style)
+
     def fig_to_image(fig, width, height, dpi=120):
         """Convert a matplotlib figure to a ReportLab Image."""
         img_buffer = io.BytesIO()
@@ -742,30 +749,45 @@ def generate_department_pdf_report(
     elements.append(Paragraph("Department Summary", heading_style))
     elements.append(Spacer(1, 0.1 * inch))
 
+
+    # Create a paragraph style for wrapped text
+    cell_style = ParagraphStyle(
+        'CellStyle',
+        parent=normal_style,
+        fontSize=8,
+        leading=10,
+        alignment=TA_LEFT,
+        wordWrap='CJK'  # Better for mixed language text
+    )
+
+    # Summary table with wrapped text
     summary_data = [
-        ["Total Courses", "Total Students", "Total Present", "Total Absent", "Avg. Class Size"],
-        [
-            str(total_courses),
-            str(total_students),
-            str(total_present),
-            str(total_absent),
-            f"{total_students / total_courses:.1f}" if total_courses > 0 else "0",
-        ],
+        [create_wrapped_cell("Total Courses", cell_style, 1.2*inch),
+         create_wrapped_cell("Total Students", cell_style, 1.2*inch),
+         create_wrapped_cell("Total Present", cell_style, 1.2*inch),
+         create_wrapped_cell("Total Absent", cell_style, 1.2*inch),
+         create_wrapped_cell("Avg. Class Size", cell_style, 1.2*inch)],
+        [create_wrapped_cell(str(total_courses), cell_style, 1.2*inch),
+         create_wrapped_cell(str(total_students), cell_style, 1.2*inch),
+         create_wrapped_cell(str(total_present), cell_style, 1.2*inch),
+         create_wrapped_cell(str(total_absent), cell_style, 1.2*inch),
+         create_wrapped_cell(f"{total_students/total_courses:.1f}" if total_courses > 0 else "0", cell_style, 1.2*inch)]
     ]
 
-    summary_table = Table(
-        summary_data,
-        colWidths=[1.2 * inch, 1.2 * inch, 1.2 * inch, 1.2 * inch, 1.2 * inch],
-    )
+    summary_table = Table(summary_data, colWidths=[1.2*inch, 1.2*inch, 1.2*inch, 1.2*inch, 1.2*inch])
     summary_table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, 0), 10),
-        ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
-        ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
-        ("GRID", (0, 0), (-1, -1), 1, colors.black),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 4),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('WORDWRAP', (0, 0), (-1, -1), True),
     ]))
     elements.append(summary_table)
     elements.append(Spacer(1, 0.2 * inch))
@@ -828,6 +850,9 @@ def generate_department_pdf_report(
         elements.append(fig_to_image(fig, 6.5 * inch, 2.8 * inch))
         elements.append(Spacer(1, 0.2 * inch))
 
+    # Add page break before High Failure Rate Courses
+    elements.append(PageBreak())
+
     # High Failure Rate Courses
     failure_df = analyzer.analyze_failure_rates(dept_courses, 1, failure_threshold, failure_score)
     elements.append(Paragraph(f"High Failure Rate Courses (> {failure_threshold}% ≤ {failure_score})", heading_style))
@@ -861,6 +886,7 @@ def generate_department_pdf_report(
         elements.append(fig_to_image(fig, 6 * inch, 3 * inch))
         elements.append(Spacer(1, 0.1 * inch))
 
+        # Create failure_display for the table
         failure_display = failure_df[
             [
                 "Course Code",
@@ -872,24 +898,48 @@ def generate_department_pdf_report(
         ].copy()
         failure_display["Failure Percentage"] = failure_display["Failure Percentage"].apply(lambda x: f"{x:.1f}%")
 
-        failure_data = [list(failure_display.columns)] + failure_display.values.tolist()
-        failure_table = Table(failure_data, colWidths=[1 * inch, 2 * inch, 1 * inch, 1.5 * inch, 1.2 * inch])
+        # Prepare failure data with wrapped text
+        failure_header = [
+            create_wrapped_cell("Code", cell_style, 1*inch),
+            create_wrapped_cell("Title", cell_style, 2*inch),
+            create_wrapped_cell("Total", cell_style, 1*inch),
+            create_wrapped_cell(f"Failed ≤{failure_score}", cell_style, 1.5*inch),
+            create_wrapped_cell("Rate", cell_style, 1.2*inch)
+        ]
+
+        failure_rows = [failure_header]
+
+        for _, row in failure_display.iterrows():
+            failure_rows.append([
+                create_wrapped_cell(str(row['Course Code']), cell_style, 1*inch),
+                create_wrapped_cell(str(row['Course Title']), cell_style, 2*inch),
+                create_wrapped_cell(str(row['Total Students']), cell_style, 1*inch),
+                create_wrapped_cell(str(row[f'Students with Scores ≤ {failure_score}']), cell_style, 1.5*inch),
+                create_wrapped_cell(str(row['Failure Percentage']), cell_style, 1.2*inch)
+            ])
+
+        failure_table = Table(failure_rows, colWidths=[1*inch, 2*inch, 1*inch, 1.5*inch, 1.2*inch])
         failure_table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.crimson),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, 0), 9),
-            ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
-            ("BACKGROUND", (0, 1), (-1, -1), colors.mistyrose),
-            ("GRID", (0, 0), (-1, -1), 1, colors.black),
-            ("FONTSIZE", (0, 1), (-1, -1), 8),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.crimson),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 8),
+            ('FONTSIZE', (0, 1), (-1, -1), 7),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+            ('TOPPADDING', (0, 1), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 4),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.mistyrose),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('WORDWRAP', (0, 0), (-1, -1), True),
         ]))
         elements.append(failure_table)
     else:
         elements.append(Paragraph("No high failure rate courses found in this department.", normal_style))
 
     elements.append(Spacer(1, 0.2 * inch))
+
 
     # High Success Rate Courses
     success_df = analyzer.analyze_success_rates(dept_courses, 1, success_threshold, success_score)
@@ -924,6 +974,7 @@ def generate_department_pdf_report(
         elements.append(fig_to_image(fig, 6 * inch, 3 * inch))
         elements.append(Spacer(1, 0.1 * inch))
 
+        # Create success_display for the table
         success_display = success_df[
             [
                 "Course Code",
@@ -935,18 +986,41 @@ def generate_department_pdf_report(
         ].copy()
         success_display["Success Percentage"] = success_display["Success Percentage"].apply(lambda x: f"{x:.1f}%")
 
-        success_data = [list(success_display.columns)] + success_display.values.tolist()
-        success_table = Table(success_data, colWidths=[1 * inch, 2 * inch, 1 * inch, 1.5 * inch, 1.2 * inch])
+        # Prepare success data with wrapped text
+        success_header = [
+            create_wrapped_cell("Code", cell_style, 1*inch),
+            create_wrapped_cell("Title", cell_style, 2*inch),
+            create_wrapped_cell("Total", cell_style, 1*inch),
+            create_wrapped_cell(f"High Success ≥{success_score}", cell_style, 1.5*inch),
+            create_wrapped_cell("Rate", cell_style, 1.2*inch)
+        ]
+
+        success_rows = [success_header]
+
+        for _, row in success_display.iterrows():
+            success_rows.append([
+                create_wrapped_cell(str(row['Course Code']), cell_style, 1*inch),
+                create_wrapped_cell(str(row['Course Title']), cell_style, 2*inch),
+                create_wrapped_cell(str(row['Total Students']), cell_style, 1*inch),
+                create_wrapped_cell(str(row[f'Students with Scores ≥ {success_score}']), cell_style, 1.5*inch),
+                create_wrapped_cell(str(row['Success Percentage']), cell_style, 1.2*inch)
+            ])
+
+        success_table = Table(success_rows, colWidths=[1*inch, 2*inch, 1*inch, 1.5*inch, 1.2*inch])
         success_table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.seagreen),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, 0), 9),
-            ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
-            ("BACKGROUND", (0, 1), (-1, -1), colors.lightgreen),
-            ("GRID", (0, 0), (-1, -1), 1, colors.black),
-            ("FONTSIZE", (0, 1), (-1, -1), 8),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.seagreen),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 8),
+            ('FONTSIZE', (0, 1), (-1, -1), 7),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+            ('TOPPADDING', (0, 1), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 4),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.lightgreen),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('WORDWRAP', (0, 0), (-1, -1), True),
         ]))
         elements.append(success_table)
     else:
@@ -962,49 +1036,75 @@ def generate_department_pdf_report(
         elements.append(Paragraph(f"{code} - {title}", subheading_style))
         elements.append(Spacer(1, 0.05 * inch))
 
-        info_data = [
-            ["Sections", "Department", "Total Students", "Absent", "Present"],
-            [
-                ", ".join(data["sections"]) if data["sections"] else "N/A",
-                data["department"],
-                str(data["total_students"]),
-                str(data["absent_count"]),
-                str(data["total_students"] - data["absent_count"]),
-            ],
+        # Course info with wrapped text
+        info_header = [
+            create_wrapped_cell("Sections", cell_style, 1.2*inch),
+            create_wrapped_cell("Department", cell_style, 1.5*inch),
+            create_wrapped_cell("Total", cell_style, 1*inch),
+            create_wrapped_cell("Absent", cell_style, 0.8*inch),
+            create_wrapped_cell("Present", cell_style, 0.8*inch)
         ]
 
-        info_table = Table(info_data, colWidths=[1.2 * inch, 1.5 * inch, 1 * inch, 0.8 * inch, 0.8 * inch])
+        info_rows = [info_header]
+        info_rows.append([
+            create_wrapped_cell(', '.join(data['sections']) if data['sections'] else 'N/A', cell_style, 1.2*inch),
+            create_wrapped_cell(data['department'], cell_style, 1.5*inch),
+            create_wrapped_cell(str(data['total_students']), cell_style, 1*inch),
+            create_wrapped_cell(str(data['absent_count']), cell_style, 0.8*inch),
+            create_wrapped_cell(str(data['total_students'] - data['absent_count']), cell_style, 0.8*inch)
+        ])
+
+        info_table = Table(info_rows, colWidths=[1.2*inch, 1.5*inch, 1*inch, 0.8*inch, 0.8*inch])
         info_table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.lightblue),
-            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, 0), 9),
-            ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
-            ("GRID", (0, 0), (-1, -1), 1, colors.black),
-            ("FONTSIZE", (0, 1), (-1, -1), 8),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.lightblue),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 8),
+            ('FONTSIZE', (0, 1), (-1, -1), 7),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+            ('TOPPADDING', (0, 1), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 4),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('WORDWRAP', (0, 0), (-1, -1), True),
         ]))
         elements.append(info_table)
         elements.append(Spacer(1, 0.05 * inch))
 
         scores = data["all_scores"]
         if scores:
-            stats_data = [
-                ["Average", "Highest", "Lowest", "Median", "Valid Scores"],
-                [
-                    f"{sum(scores) / len(scores):.2f}",
-                    f"{max(scores):.2f}",
-                    f"{min(scores):.2f}",
-                    f"{statistics.median(scores):.2f}",
-                    str(len(scores)),
-                ],
+
+
+            stats_header = [
+                create_wrapped_cell("Lowest", cell_style, 1*inch),
+                create_wrapped_cell("Average", cell_style, 1*inch),
+                create_wrapped_cell("Highest", cell_style, 1*inch),                
+                create_wrapped_cell("Median", cell_style, 1*inch),
+                # create_wrapped_cell("Valid", cell_style, 1*inch)
             ]
 
-            stats_table = Table(stats_data, colWidths=[1 * inch, 1 * inch, 1 * inch, 1 * inch, 1 * inch])
+            stats_rows = [stats_header]
+            stats_rows.append([
+                create_wrapped_cell(f"{min(scores):.2f}", cell_style, 1*inch),
+                create_wrapped_cell(f"{sum(scores)/len(scores):.2f}", cell_style, 1*inch),
+                create_wrapped_cell(f"{max(scores):.2f}", cell_style, 1*inch),
+                create_wrapped_cell(f"{statistics.median(scores):.2f}", cell_style, 1*inch),
+                # create_wrapped_cell(str(len(scores)), cell_style, 1*inch)
+            ])
+
+            # stats_table = Table(stats_rows, colWidths=[1*inch, 1*inch, 1*inch, 1*inch, 1*inch])
+            stats_table = Table(stats_rows, colWidths=[1*inch, 1*inch, 1*inch, 1*inch])
             stats_table.setStyle(TableStyle([
-                ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
-                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("GRID", (0, 0), (-1, -1), 1, colors.black),
+                ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('FONTSIZE', (0, 0), (-1, 0), 8),
+                ('FONTSIZE', (0, 1), (-1, -1), 7),
+                ('TOPPADDING', (0, 1), (-1, -1), 4),
+                ('BOTTOMPADDING', (0, 1), (-1, -1), 4),
+                ('WORDWRAP', (0, 0), (-1, -1), True),
             ]))
             elements.append(stats_table)
             elements.append(Spacer(1, 0.1 * inch))
@@ -1225,40 +1325,83 @@ def main():
             help="Courses with success percentage above this value will be shown"
         )
 
-    # Main content area
+    # Initialize session state variables
+    if 'processed_signature' not in st.session_state:
+        st.session_state.processed_signature = None
+        st.session_state.all_results = []
+        st.session_state.validation_passed = []
+        st.session_state.validation_failed = []
+        st.session_state.aggregated = None
+
+    def get_files_signature(files):
+        signature = []
+        for f in files:
+            name = getattr(f, "name", "unknown")
+            try:
+                current_pos = f.tell()
+                f.seek(0, 2)
+                size = f.tell()
+                f.seek(current_pos)
+            except:
+                size = None
+            signature.append((name, size))
+        return tuple(sorted(signature))
+
     if uploaded_files:
         st.header("📋 Validation Results")
-        
-        # Process all files
-        all_results = []
-        validation_passed = []
-        validation_failed = []
-        
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        for i, file in enumerate(uploaded_files):
-            status_text.text(f"Processing file {i+1} of {len(uploaded_files)}: {getattr(file, 'name', 'unknown')}")
-            result = process_uploaded_file(file, analyzer)
-            all_results.append(result)
-            
-            if result['valid']:
-                validation_passed.append(result)
+
+        progress_placeholder = st.empty()
+        current_signature = get_files_signature(uploaded_files)
+
+        if st.session_state.processed_signature != current_signature:
+            st.session_state.processed_signature = current_signature
+
+            with progress_placeholder.container():
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+
+                all_results = []
+                validation_passed = []
+                validation_failed = []
+
+                for i, file in enumerate(uploaded_files):
+                    status_text.text(
+                        f"Processing file {i+1} of {len(uploaded_files)}: {getattr(file, 'name', 'unknown')}"
+                    )
+                    result = process_uploaded_file(file, analyzer)
+                    all_results.append(result)
+
+                    if result['valid']:
+                        validation_passed.append(result)
+                    else:
+                        validation_failed.append(result)
+
+                    progress_bar.progress((i + 1) / len(uploaded_files))
+
+            st.session_state.all_results = all_results
+            st.session_state.validation_passed = validation_passed
+            st.session_state.validation_failed = validation_failed
+
+            if validation_passed:
+                courses_data = {r['filename']: r for r in validation_passed}
+                st.session_state.aggregated = analyzer.aggregate_courses(courses_data)
             else:
-                validation_failed.append(result)
-            
-            progress_bar.progress((i + 1) / len(uploaded_files))
+                st.session_state.aggregated = None
+
+        else:
+            progress_placeholder.empty()
+            all_results = st.session_state.all_results
+            validation_passed = st.session_state.validation_passed
+            validation_failed = st.session_state.validation_failed
         
-        status_text.text("Processing complete!")
-        
-        # Display validation summary
+        # Display validation summary (always show)
         col1, col2 = st.columns(2)
         with col1:
             st.success(f"✅ Passed: {len(validation_passed)} files")
         with col2:
             st.error(f"❌ Failed: {len(validation_failed)} files")
         
-        # Show failed files
+        # Show failed files (always show)
         if validation_failed:
             with st.expander("View Failed Files Details"):
                 for result in validation_failed:
@@ -1266,14 +1409,13 @@ def main():
                     for error in result['errors']:
                         st.write(f"- {error}")
                     st.markdown("---")
-
+        
+        # Use aggregated data from session state
+        aggregated = st.session_state.aggregated
+        
         # Aggregate and analyze if there are valid files
         if validation_passed:
             st.header("📊 Course Analysis")
-            
-            # Aggregate courses
-            courses_data = {r['filename']: r for r in validation_passed}
-            aggregated = analyzer.aggregate_courses(courses_data)
             
             if not aggregated:
                 st.warning("No valid course data found in the uploaded files.")
@@ -1456,12 +1598,21 @@ def main():
                     }
                 
                 if course_options:
+                    # selected_course = st.selectbox(
+                    #     "🔍 Select a course to view details:",
+                    #     course_options,
+                    #     help="Choose a course to see detailed statistics and marks distribution"
+                    # )
+                    
                     selected_course = st.selectbox(
                         "🔍 Select a course to view details:",
-                        course_options,
-                        help="Choose a course to see detailed statistics and marks distribution"
+                        options=course_options,
+                        index=None,
+                        placeholder="Type course code or name to search...",
+                        key="course_details_picker",
+                        help="Start typing the course code or name to filter the list"
                     )
-                    
+
                     if selected_course:
                         course_info = course_mapping[selected_course]
                         course_data = course_info['data']
@@ -1495,25 +1646,26 @@ def main():
                             median_score = sorted(all_scores)[len(all_scores)//2]
                             
                             # Display statistics in a clean layout
-                            col1, col2, col3, col4 = st.columns(4)
+                            col1, col2, col3 = st.columns(3)
                             with col1:
                                 st.metric("Total Students", total_students)
                             with col2:
                                 st.metric("Present", present_students)
                             with col3:
                                 st.metric("Absent", absent_count)
-                            with col4:
-                                st.metric("Valid Scores", len(all_scores))
+                            # with col4:
+                            #     st.metric("Valid Scores", len(all_scores))
                             
-                            col1, col2, col3, col4 = st.columns(4)
+                            col1, col2, col3 = st.columns(3)
                             with col1:
-                                st.metric("Average Score", f"{avg_score:.2f}")
-                            with col2:
-                                st.metric("Highest Score", f"{max_score:.2f}")
-                            with col3:
                                 st.metric("Lowest Score", f"{min_score:.2f}")
-                            with col4:
-                                st.metric("Median Score", f"{median_score:.2f}")
+                            with col2:
+                                st.metric("Average Score", f"{avg_score:.2f}")
+                            with col3:
+                                st.metric("Highest Score", f"{max_score:.2f}")
+                                
+                            # with col4:
+                            #     st.metric("Median Score", f"{median_score:.2f}")
                             
                             # 4. Marks Distribution
                             st.markdown("### 📊 Marks Distribution")
